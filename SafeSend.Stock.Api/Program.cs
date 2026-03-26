@@ -3,10 +3,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SafeSend.Stock.Api.Data;
-using SafeSend.Stock.Api.Services;
 using SafeSend.Stock.Api.Features.Auth;
 using SafeSend.Stock.Api.Middleware;
+using SafeSend.Stock.Api.Services;
 using SafeSend.Stock.Api.Swagger;
+using System;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -23,8 +24,8 @@ var builder = WebApplication.CreateBuilder(args);
 // --------------------
 // Data (EF Core)
 // --------------------
-builder.Services.AddDbContext<ApplicationDbContext>(o =>
-    o.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // --------------------
 // Identity
@@ -96,16 +97,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 // --------------------
 // Controllers (MVC)
-// IMPORTANT: this must be BEFORE builder.Build()
 // --------------------
 builder.Services.AddControllers()
     .AddJsonOptions(o =>
         o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 // --------------------
 // App services
-// --------------------
-// TokenService now depends on UserManager<IdentityUser> if you applied the role-aware version
+
 builder.Services.AddScoped<TokenService>();
+
+builder.Services.AddSignalR();
 
 // --------------------
 // Swagger
@@ -149,5 +150,6 @@ app.UseAuthorization();
 // Map controllers
 // --------------------
 app.MapControllers();
+app.MapHub<StockHub>("/stockHub");
 
 app.Run();

@@ -244,10 +244,10 @@ export default function Companies() {
   setErr(""); setMsg("");
   try {
     if (isInWatchlist(symbol)) {
-      await api.delete(`/api/watchlist/${symbol}`);   // ✅ already correct
+      await api.delete(`/api/watchlist/${symbol}`);  
       setMsg(`${symbol} removed from watchlist.`);
     } else {
-      await api.post(`/api/watchlist/${symbol}`);     // ✅ was: api.post("/api/watchlist", { symbol })
+      await api.post(`/api/watchlist/${symbol}`);
       setMsg(`${symbol} added to watchlist.`);
     }
     await loadWatchlist();

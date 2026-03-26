@@ -181,7 +181,7 @@ stock-frontend/
 
 ### Prerequisites
 - **Node.js** `16+` and **npm** or **yarn**
-- **Backend API** running at `http://localhost:5000` or configured in `.env`
+- **Backend API** running at `http://localhost:5006` or configured in `.env`
 
 ### Step 1: Clone & Install Dependencies
 

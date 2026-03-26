@@ -1,7 +1,4 @@
-﻿using Microsoft.Identity.Client.Extensions.Msal;
-using System.Runtime.Intrinsics.Arm;
-
-namespace SafeSend.Stock.Api.Services;
+﻿namespace SafeSend.Stock.Api.Services;
 
 //KycStoredFile is an immutable record that holds metadata about a saved KYC file,
 //while IKycStorage defines a contract for saving, reading, and deleting those files.
