@@ -4,7 +4,7 @@ EXPOSE 8080
 
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
-COPY ["SafeSend.Stock.Api.csproj", "./"]
+COPY ["SafeSend.Stock.Api/SafeSend.Stock.Api.csproj", "./"]
 RUN dotnet restore "SafeSend.Stock.Api.csproj"
 COPY . .
 RUN dotnet publish "SafeSend.Stock.Api.csproj" -c Release -o /app/publish
