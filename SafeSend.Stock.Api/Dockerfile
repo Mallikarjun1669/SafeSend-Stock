@@ -11,4 +11,4 @@ RUN dotnet publish -c Release -o /app/out
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/out .
-ENTRYPOINT ["dotnet", "SafeSend.dll"]
+ENTRYPOINT ["dotnet", "SafeSend.Stock.Api.dll"]
