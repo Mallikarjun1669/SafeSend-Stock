@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -13,13 +13,6 @@ using System.Text;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
-
-/*App starts
-    → DI Container is set up with registered services
-        → Something requests TokenService
-            → DI sees TokenService needs IConfiguration + UserManager
-                → DI injects them automatically via the constructor
-                    → _config and _userManager are ready to use*/
 
 // --------------------
 // Data (EF Core)
@@ -87,10 +80,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(2),
 
-            // IMPORTANT FOR ROLES:
             RoleClaimType = ClaimTypes.Role,
-
-            // Helpful for User.Identity.Name, etc.
             NameClaimType = ClaimTypes.NameIdentifier
         };
     });
@@ -101,11 +91,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddControllers()
     .AddJsonOptions(o =>
         o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
 // --------------------
 // App services
-
+// --------------------
 builder.Services.AddScoped<TokenService>();
-
 builder.Services.AddSignalR();
 
 // --------------------
@@ -119,17 +109,29 @@ builder.Services.AddCors(options =>
     {
         policy
             .WithOrigins(
-                "http://localhost:5173", // Vite default
-                "http://localhost:5174", // Your current Vite port
-                "http://localhost:3000"  // CRA/Next dev
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
+
 var app = builder.Build();
 
-// Seed roles + (optional) default admin user
+// --------------------
+// Auto-run Migrations
+// --------------------
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    db.Database.Migrate();
+}
+
+// --------------------
+// Seed roles + default admin user
+// --------------------
 await IdentitySeeder.SeedAsync(app.Services);
 
 // --------------------
