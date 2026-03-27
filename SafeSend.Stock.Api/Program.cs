@@ -1,157 +1,147 @@
+using BankingSystem.API.Data;
+using BankingSystem.API.Hubs;
+using BankingSystem.API.Middleware;
+using BankingSystem.API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using SafeSend.Stock.Api.Data;
-using SafeSend.Stock.Api.Features.Auth;
-using SafeSend.Stock.Api.Middleware;
-using SafeSend.Stock.Api.Services;
-using SafeSend.Stock.Api.Swagger;
-using System;
-using System.Security.Claims;
 using System.Text;
-using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --------------------
-// Data (EF Core)
-// --------------------
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-// --------------------
-// Identity
-// --------------------
-builder.Services.AddIdentityCore<IdentityUser>(options =>
-{
-    options.Password.RequireDigit = true;
-    options.Password.RequireLowercase = true;
-    options.Password.RequireUppercase = false;
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredLength = 6;
-
-    options.User.RequireUniqueEmail = true;
-})
-.AddRoles<IdentityRole>()
-.AddEntityFrameworkStores<ApplicationDbContext>()
-.AddSignInManager()
-.AddDefaultTokenProviders();
-builder.Services.AddScoped<MarketFluctuationService>();
-
-builder.Services.Configure<KycStorageOptions>(builder.Configuration.GetSection("KycStorage"));
-
-builder.Services.AddSingleton<IKycStorage, LocalKycStorage>();
-builder.Services.AddScoped<KycService>();
-builder.Services.AddScoped<TradingEligibilityService>();
-
-// --------------------
-// AuthZ/AuthN
-// --------------------
-builder.Services.AddAuthorization();
-
-// Read JWT settings once
-var jwtIssuer = builder.Configuration["Jwt:Issuer"];
-var jwtAudience = builder.Configuration["Jwt:Audience"];
-var jwtKey = builder.Configuration["Jwt:Key"];
-
-if (string.IsNullOrWhiteSpace(jwtIssuer) ||
-    string.IsNullOrWhiteSpace(jwtAudience) ||
-    string.IsNullOrWhiteSpace(jwtKey))
-{
-    throw new InvalidOperationException(
-        "Missing JWT configuration. Please set Jwt:Issuer, Jwt:Audience, Jwt:Key in appsettings.json");
-}
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(o =>
+// Add services
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
     {
-        o.TokenValidationParameters = new()
-        {
-            ValidateIssuer = true,
-            ValidIssuer = jwtIssuer,
-
-            ValidateAudience = true,
-            ValidAudience = jwtAudience,
-
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromMinutes(2),
-
-            RoleClaimType = ClaimTypes.Role,
-            NameClaimType = ClaimTypes.NameIdentifier
-        };
+        options.JsonSerializerOptions.ReferenceHandler =
+            System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.WriteIndented = true;
     });
 
-// --------------------
-// Controllers (MVC)
-// --------------------
-builder.Services.AddControllers()
-    .AddJsonOptions(o =>
-        o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddEndpointsApiExplorer();
 
-// --------------------
-// App services
-// --------------------
-builder.Services.AddScoped<TokenService>();
-builder.Services.AddSignalR();
-
-// --------------------
-// Swagger
-// --------------------
-builder.Services.AddSwaggerWithJwt();
-
-builder.Services.AddCors(options =>
+// Swagger with JWT support
+builder.Services.AddSwaggerGen(options =>
 {
-    options.AddPolicy("Frontend", policy =>
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
-        policy
-            .WithOrigins(
-                "http://localhost:5173",
-                "http://localhost:5174",
-                "http://localhost:3000"
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Enter your JWT token. Example: Bearer eyJhbGci..."
+    });
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
     });
 });
 
+// EF Core
+builder.Services.AddDbContext<BankingDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// JWT Authentication
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"]!;
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSettings["Issuer"],
+        ValidAudience = jwtSettings["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey))
+    };
+
+    // Allow SignalR to read JWT from query string
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+
+            if (!string.IsNullOrEmpty(accessToken) &&
+                path.StartsWithSegments("/hubs/voucher"))
+            {
+                context.Token = accessToken;
+            }
+
+            return Task.CompletedTask;
+        }
+    };
+});
+
+builder.Services.AddAuthorization();
+
+// ✅ CORS — allows both local dev and live Render frontend
+var allowedOrigins = builder.Configuration
+    .GetSection("AllowedOrigins")
+    .Get<string[]>()
+    ?? new[]
+    {
+        "http://localhost:5173",
+        "http://localhost:5174"
+    };
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReact", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials(); // Required for SignalR
+    });
+});
+
+// SignalR
+builder.Services.AddSignalR();
+
+// App Services
+builder.Services.AddScoped<VoucherPostingService>();
+
 var app = builder.Build();
 
-// --------------------
-// Auto-run Migrations
-// --------------------
+// Seed default users at startup
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    db.Database.Migrate();
+    var context = scope.ServiceProvider.GetRequiredService<BankingDbContext>();
+    DbInitializer.Seed(context);
 }
 
-// --------------------
-// Seed roles + default admin user
-// --------------------
-await IdentitySeeder.SeedAsync(app.Services);
+// ✅ Enable Swagger in all environments (so you can test on Render too)
+app.UseSwagger();
+app.UseSwaggerUI();
 
-// --------------------
-// Middleware pipeline
-// --------------------
 app.UseMiddleware<GlobalExceptionMiddleware>();
-
-app.UseSwaggerUiInDev();
-
-app.UseHttpsRedirection();
-
-app.UseCors("Frontend");
-
+app.UseCors("AllowReact");
 app.UseAuthentication();
 app.UseAuthorization();
-
-// --------------------
-// Map controllers
-// --------------------
 app.MapControllers();
-app.MapHub<StockHub>("/stockHub");
+
+// Map SignalR Hub
+app.MapHub<VoucherHub>("/hubs/voucher");
 
 app.Run();
